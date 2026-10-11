@@ -9,6 +9,7 @@ Fixture world from tests/surfaces_fixture.py and a fake display. No real
 socket to Kyber, no real Messages, nothing sent.
 """
 import json
+from datetime import timedelta
 import os
 import re
 import socket
@@ -22,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import surfaces_fixture as fx  # noqa: E402
+import surface_lint  # noqa: E402
 
 import osgraph  # noqa: E402
 import surfaces  # noqa: E402
@@ -33,7 +35,7 @@ ks = module_from_spec(spec_from_loader("kyber_surfaces", loader))
 loader.exec_module(ks)
 
 COMPONENTS = {"Screen", "Stack", "Heading", "Text", "List", "Metric", "Table", "Status", "Sparkline", "Bars",
-              "Ring", "Events", "Diagram", "File", "Button", "Field", "Select", "Checkbox"}
+              "Ring", "Events", "Diagram", "File", "Button", "Field", "Select", "Checkbox", "Transcript"}
 ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PROP = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|\S+)')
 
@@ -68,7 +70,7 @@ def validate(lines: list[str]) -> list[str]:
     roots = []
     for line in lines:
         op = line.split(" ", 1)[0]
-        if op not in ("@", "c", ">", "r", "d", "-"):
+        if op not in ("@", "c", ">", "r", "d", "-", "glance"):
             problems.append(f"unknown op: {line[:40]}")
             continue
         if op == "c":
@@ -120,11 +122,51 @@ def make_daemon(ctx, tmp: Path):
     return d, hud
 
 
+def meeting_fixtures(home: Path) -> None:
+    """Two calls as room-capture writes them, worded like real ones: a client
+    sync with decisions and owed items, and a short 1:1 with neither."""
+    import meeting_capture as MC
+    folder = MC.private_dir(MC.meetings_dir(home))
+    start = fx.NOW - timedelta(hours=3)
+    lines = [{"at": MC.iso(start + timedelta(minutes=n)), "clock": (start + timedelta(minutes=n)).strftime("%-I:%M:%S %p"),
+              "seconds": 15, "text": t} for n, t in enumerate([
+                  "Tier A goes out Monday and tier B on Wednesday.",
+                  "Caleb will send Jonah the final list by Monday.",
+                  "Sagar is checking the bounce rate on the second domain."])]
+    sync = {"schema": 1, "id": "rc-" + start.astimezone().strftime("%Y%m%d-%H%M%S"), "title": "Zeutara weekly sync",
+            "app": MC.APP, "created_at": MC.iso(start), "updated_at": MC.iso(start + timedelta(minutes=34)),
+            "started_at": MC.iso(start), "ended_at": MC.iso(start + timedelta(minutes=34)), "timezone": "",
+            "calendar_event": {"id": "ev-1"}, "lines": lines,
+            "participants": [{"human_id": "cal-0", "display_name": "Jonah Graham", "email": "jonah@zeutara.example",
+                              "role": "attendee"},
+                             {"human_id": "cal-1", "display_name": "Sagar Tiwari", "email": "sagar@amber.example",
+                              "role": "attendee"}],
+            "summary": {"markdown": "## Summary\n- Wave 2 copy is final\n- Bounce rate on the new domain is "
+                                    "under 2 percent\n- Tier A goes out Monday\n## Decisions\n- Tier A ships "
+                                    "Monday, tier B Wednesday\n", "at": MC.iso(start), "by": "claude -p",
+                        "guess": True},
+            "summary_note": "",
+            "action_items": [{"id": "a1", "text": "Send Jonah the final list", "assignee_human_id": "",
+                              "status": "open", "guess": True, "due_at": "", "completed_at": None},
+                             {"id": "a2", "text": "Check the bounce rate on the second domain",
+                              "assignee_human_id": "cal-1", "status": "open", "guess": True, "due_at": "",
+                              "completed_at": None}]}
+    one = start - timedelta(days=1)
+    chat = {**sync, "id": "rc-" + one.astimezone().strftime("%Y%m%d-%H%M%S"), "title": "Sagar 1:1",
+            "created_at": MC.iso(one), "updated_at": MC.iso(one + timedelta(minutes=12)), "started_at": MC.iso(one),
+            "ended_at": MC.iso(one + timedelta(minutes=12)), "participants": sync["participants"][1:],
+            "summary": {"markdown": "## Summary\n- Walked through the fridge site\n", "at": MC.iso(one),
+                        "by": "claude -p", "guess": True}, "action_items": [], "lines": lines[:1]}
+    for m in (sync, chat):
+        MC.write_private(folder / f"{m['id']}.json", m)
+
+
 def drawing(tmp: Path) -> None:
     g, ctx, run, _ = fx.world(tmp)
     d, hud = make_daemon(ctx, tmp)
-    specs = [("needs-you", ""), ("today", ""), ("tasks", ""), ("people", ""), ("conversations", ""),
-             ("person", "Sagar Tiwari"), ("space", "amber"), ("music", ""), ("files", "")]
+    specs = [("needs-you", ""), ("missing", ""), ("today", ""), ("tasks", ""), ("people", ""), ("conversations", ""),
+             ("person", "Sagar Tiwari"), ("space", "amber"), ("music", ""), ("files", ""), ("meetings", "")]
+    meeting_fixtures(ctx.home)
     for kind, arg in specs:
         provider = surfaces.make(kind, arg) if arg else surfaces.make(kind)
         name = provider.name
@@ -144,6 +186,8 @@ def drawing(tmp: Path) -> None:
             line.startswith(("@ ", "d ")) for line in after) and after[0] == f"@ {name}", after[:3])
         check(f"{name}: the data model after a refresh is still valid", validate(first + after) == [],
               validate(first + after)[:3])
+        walls = surface_lint.lint(first + after)
+        check(f"{name}: reads at a glance, no wall of text", walls == [], walls[:3])
         d.refresh(name)
         check(f"{name}: an unchanged refresh sends nothing", hud.take() == [])
         err = provider.model(live.data, "Calendar: access is off.", live.values, ctx)
@@ -213,13 +257,13 @@ def safety(tmp: Path) -> None:
     log = (tmp / "activity.jsonl").read_text()
     check("the activity log has the action and outcome, never the body",
           '"action": "act"' in log and "Monday works" not in log, log)
-    mail = next((r for r in d.open["needs-you"].data["rows"] if r["type"] == "MailItem"), None)
+    mail = next((r for r in d.open["needs-you"].data["rows"] if r["type"] == "MailItem" and r["props"].get("verified")), None)
     if mail:
         d.handle_line(f'v /needs-you/pick {json.dumps(mail["pick"])}')
         d.handle_line('v /needs-you/draft "Sounds right"')
         d.handle_line("e ks-act needs-you-go")
-        check("a mail row makes a draft and sends nothing",
-              any(c[:3] == ["mac", "mail", "draft"] for c in run.calls) and len(run.sent) == 1, run.sent)
+        check("a mail row makes a Gmail draft and sends nothing",
+              len(run.drafts) == 1 and len(run.sent) == 1, (run.drafts, run.sent))
     # Pivot: a row press opens that node's own walk.
     d.handle_line(f'e action ks-pivot row="person:{fx.SAGAR}" surface="needs-you"')
     check("a row press (hud/CLAUDE.md row-action contract) opens that person's walk",
@@ -292,6 +336,16 @@ def spaces_and_state(tmp: Path) -> None:
     d2, _ = make_daemon(ctx, tmp)
     d2.restore()
     check("a restarted daemon reopens the same surfaces", set(d2.open) == set(d.open), list(d2.open))
+    # The X on one card: forgotten here too, so no refresh or restart redraws
+    # it as an empty "Loading" card (2026-10-11, tasks).
+    d.handle_line('e closed today surface="today"')
+    hud.take()
+    d.refresh("today")
+    check("a card closed with its X is forgotten and saved",
+          "today" not in d.open and "today" not in json.loads((tmp / "state.json").read_text())["open"],
+          list(d.open))
+    check("a refresh draws nothing for a closed card",
+          not any(line.startswith("@ today") for line in hud.take()))
     d.handle_line("x")
     check("the display's clear (x) closes everything and remembers that",
           d.open == {} and json.loads((tmp / "state.json").read_text())["open"] == {})
@@ -500,14 +554,14 @@ def one_person_every_network(tmp: Path) -> None:
     line = json.loads(live.sent[f"/{name}/timeline"])
     nets = {item["text"].split(" · ")[0] for item in line}
     check("one timeline holds his texts and his mail, each tagged with its network",
-          {"iMessage", "Mail"} <= nets, [i["text"][:30] for i in line])
-    check("the timeline is newest first", line[0]["text"].startswith("Mail"), line[0]["text"][:40])
+          {"iMessage", "Gmail"} <= nets, [i["text"][:30] for i in line])
+    check("the timeline is newest first", line[0]["text"].startswith("Gmail"), line[0]["text"][:40])
     check("the composer defaults to the network he used last",
-          json.loads(live.sent[f"/{name}/via"]) == "Mail" and json.loads(live.sent[f"/{name}/go"]) == "Draft in Mail")
+          json.loads(live.sent[f"/{name}/via"]) == "Gmail" and json.loads(live.sent[f"/{name}/go"]) == "Draft in Gmail")
     d.handle_line(f'v /{name}/draft "Got it"')
     d.handle_line(f"e ks-reply {name}-go")
-    check("on Mail the reply becomes a draft, nothing is sent",
-          run.sent == [] and any(c[:3] == ["mac", "mail", "draft"] and "sagar@amber.example" in c for c in run.calls))
+    check("on Gmail the reply becomes a draft, nothing is sent",
+          run.sent == [] and any("sagar@amber.example" in c for c in run.drafts), run.drafts)
     d.handle_line(f'v /{name}/via "iMessage"')
     check("switching the network changes the button", json.loads(live.sent[f"/{name}/go"]) == "Send on iMessage")
     d.handle_line(f'v /{name}/draft "Got it"')
@@ -535,7 +589,7 @@ def one_person_every_network(tmp: Path) -> None:
 
 
 def genui_wiring(tmp: Path) -> None:
-    """docs/GENUI.md steps 1, 3 and 4, against fixture data and stubs."""
+    """docs/reference/GENUI.md steps 1, 3 and 4, against fixture data and stubs."""
     from unittest.mock import Mock, patch
     g, ctx, run, _ = fx.world(tmp)
     rows = ks.walk_data("unreplied", "", ctx)["rows"]
@@ -551,7 +605,8 @@ def genui_wiring(tmp: Path) -> None:
     manifest = json.loads((fx.ROOT / "config" / "surfaces" / "genui-queries.json").read_text())
     check("the manifest's walks are ones kyber-surfaces has",
           all(q["argv"][:3] in (["kyber-surfaces", "walk", "unreplied"], ["kyber-surfaces", "walk", "needs-you"],
-                                ["kyber-surfaces", "walk", "person"], ["kyber-surfaces", "walk", "conversations"])
+                                ["kyber-surfaces", "walk", "person"], ["kyber-surfaces", "walk", "conversations"],
+                                ["kyber-surfaces", "walk", "missing"])
               for q in manifest["queries"]))
     check("the one row action it allows is the pivot the daemon handles", list(manifest["row_actions"]) == ["ks-pivot"])
 
@@ -598,6 +653,24 @@ def genui_wiring(tmp: Path) -> None:
               listener.to_assistant.call_args.args[0] == "plan my Tuesday")
     check("a plain question is not a panel", not listener.genui_request("tell me about the Civil War", False))
 
+    # No source on this Mac: kyber-genui answered from the web on the search
+    # surface. The voice says its sentence, and the source rows open on a press.
+    class Answered(Done):
+        stderr = json.dumps({"no_source": True, "say": "Apple closed at 231 dollars, per nasdaq.com.",
+                             "answer": {"path": "web", "surface": "search", "sources": [
+                                 {"id": "src-0", "url": "https://www.nasdaq.com/market-activity/stocks/aapl"},
+                                 {"id": "src-1", "url": "file:///etc/hosts"}]}})
+    with patch.object(m.subprocess, "run", lambda argv, **kw: Answered(0)), \
+            patch.object(m.threading, "Thread") as thread:
+        thread.side_effect = lambda target, daemon=True, args=(): type("T", (), {"start": lambda self: target()})()
+        listener.genui_request("pull up Apple's stock price", False)
+    check("a web answer is spoken, not 'It's on the glass'",
+          listener.speak.call_args.args[0] == "Apple closed at 231 dollars, per nasdaq.com.",
+          listener.speak.call_args)
+    check("its source rows open on a press, and a file: URL is dropped",
+          listener.search_rows == {"src-0": "https://www.nasdaq.com/market-activity/stocks/aapl"}
+          and listener.search_open, getattr(listener, "search_rows", None))
+
     import route
     seen = {}
 
@@ -625,6 +698,10 @@ def payload_parse() -> None:
 def main() -> int:
     payload_parse()
     listener_ignores_surface_actions()
+    check("idle glass ingests every five minutes, open glass every minute",
+          ks.next_ingest_in(4.0, False) == ks.INGEST_IDLE_S and ks.next_ingest_in(4.0, True) == ks.INGEST_EVERY_S)
+    check("a slow ingest stretches the wait so it stays a tenth of a core",
+          ks.next_ingest_in(30.0, True) == 300.0, ks.next_ingest_in(30.0, True))
     for fn in (drawing, safety, security, one_person_every_network, genui_wiring, files_and_music,
                spaces_and_state,
                socket_protocol):

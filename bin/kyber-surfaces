@@ -20,13 +20,15 @@ conversations. A row is a graph node, so a press on it opens that node's walk.
     kyber-surfaces activity [--limit N]              what the surfaces did, newest last
     kyber-surfaces ingest [--days N]                 read every source into the graph now
     kyber-surfaces walk <kind> [arg]                 print a walk's rows, no HUD needed
+    kyber-surfaces home [--write]                    the desktop home panel's feed (~/.bob/home-panel.json)
+    kyber-surfaces home --handle|--send|--drop <id>  the agent on a to-do for someone (home_agent.py)
     kyber-surfaces graph                             counts, and every edge re-checked
     kyber-surfaces forget                            stop the daemon, delete what it stored
     kyber-surfaces start                             the daemon, in the background (hud-listen runs this)
     kyber-surfaces run                               the daemon, in the foreground
 
 The wire format is hud/CLAUDE.md; what this sends and accepts is in
-docs/KYBER-SURFACES.md.
+docs/reference/KYBER-SURFACES.md.
 
 HOW IT STAYS CHEAP. A surface is drawn once (`@`, `c`, `>`, `r`) with every
 changing prop bound to a pointer. A refresh walks the graph, diffs the data
@@ -55,6 +57,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 
+import live_glass  # noqa: E402
+import surface_lint  # noqa: E402
 import hud_events  # noqa: E402
 import osgraph  # noqa: E402
 import osgraph_ingest  # noqa: E402
@@ -64,9 +68,18 @@ from surfaces import ACTION_PREFIX, Context, Result, SurfaceError, data_line  # 
 BOB = Path(os.environ.get("BOB_DIR", str(Path.home() / ".bob")))
 HUD_SOCKET = os.environ.get("BOB_HUD_SOCKET", str(BOB / "hud.sock"))
 CONTROL = os.environ.get("KYBER_SURFACES_SOCK", str(BOB / "surfaces.sock"))
+CONTROL_LOCK = Path(CONTROL + ".start-lock")
 STATE = Path(os.environ.get("KYBER_SURFACES_STATE", str(BOB / "surfaces-state.json")))
 ACTIVITY = Path(os.environ.get("KYBER_SURFACES_ACTIVITY", str(BOB / "surfaces-activity.jsonl")))
 BADGES = Path(os.environ.get("KYBER_SURFACES_BADGES", str(BOB / "badges.json")))
+# The desktop home panel's feed, read by Kyber (hud/Sources/KyberKit/Home.swift)
+# from the same folder. Not home.json: that file is where he lives, for the
+# weather (bin/lib/quick.py), and a first build of this nearly wrote over it.
+HOME_PANEL = BOB / "home-panel.json"
+# To-dos crossed off on the panel (home_feed.cross).
+HOME_DONE = BOB / "home-done.json"
+# To-dos handed to the agent from the panel (home_agent).
+HOME_AGENT = BOB / "home-agent.json"
 CONFIG = Path(os.environ.get("KYBER_SURFACES_CONFIG", str(Path.home() / ".chewbacca" / "surfaces.json")))
 LOG = Path.home() / "Library" / "Logs" / "com.calebnewton.chewbacca.surfaces.log"
 
@@ -93,6 +106,21 @@ ACTIVITY_KEEP = 2000
 # Seconds between ingests. A full 7-day ingest took 4.2 to 5.3 s on
 # 2026-10-04 (imessage dominates), so once a minute costs under a tenth of one core.
 INGEST_EVERY_S = 60.0
+# With nothing on the glass only the badge needs the graph. On 2026-10-10 the
+# daemon sat at 25% of a core for 90 minutes with no panel open, at load 71 and
+# 27.6 of 28.7 GB swap, because a full ingest no longer took 5 s. Idle, it
+# ingests every five minutes. Guessed, never measured.
+INGEST_IDLE_S = 300.0
+# An ingest may take at most this share of the time between ingests, so a slow
+# Mac stretches the wait instead of the daemon eating a core. Guessed.
+INGEST_MAX_SHARE = 0.1
+
+
+def next_ingest_in(took_s: float, panels_open: bool) -> float:
+    """Seconds until the next ingest: the base cadence for the glass's state,
+    stretched so one ingest is at most INGEST_MAX_SHARE of the cycle."""
+    base = INGEST_EVERY_S if panels_open else INGEST_IDLE_S
+    return max(base, took_s / INGEST_MAX_SHARE)
 # The pilot window (brief, 2026-10-04: "ingest only the last 7 days ... then
 # widen"). KYBER_SURFACES_DAYS widens it.
 INGEST_DAYS = int(os.environ.get("KYBER_SURFACES_DAYS") or 7)
@@ -150,17 +178,24 @@ class Live:
         self.values: dict = {}
         self.due = 0.0
         self.busy = False
+        # What the provider's shape() said at the last full draw. A provider
+        # whose components change with its state (the doc surface: a File, a
+        # Table, or a Diff) is redrawn whole when this moves, because a bound
+        # File with no path draws "Not on disk" rather than nothing.
+        self.shape = None
 
 
 class Daemon:
     def __init__(self, hud, ctx: Context | None = None, state_path: Path = STATE,
                  activity_path: Path = ACTIVITY, badges_path: Path = BADGES, spaces: dict | None = None,
-                 clock=time.monotonic, spawn=None, ingest=None, make=None):
+                 clock=time.monotonic, spawn=None, ingest=None, make=None, home_path: Path | None = None):
         self.hud = hud
         self.ctx = ctx or Context()
         self.state_path = state_path
         self.activity_path = activity_path
         self.badges_path = badges_path
+        # Beside the badge, so a test that moves the badge moves this too.
+        self.home_path = home_path or badges_path.with_name("home-panel.json")
         self.spaces = spaces if spaces is not None else spaces_config()
         self.clock = clock
         self.spawn = spawn or (lambda fn: threading.Thread(target=fn, daemon=True).start())
@@ -182,6 +217,7 @@ class Daemon:
             if self.ingesting:
                 return {}
             self.ingesting = True
+        started = time.monotonic()
         try:
             if self.ingester is not None:
                 report = self.ingester(self.ctx)
@@ -198,10 +234,11 @@ class Daemon:
         finally:
             with self.lock:
                 self.ingesting = False
-                self.next_ingest = self.clock() + INGEST_EVERY_S
+                self.next_ingest = self.clock() + next_ingest_in(time.monotonic() - started, bool(self.open))
                 for live in self.open.values():
                     live.due = 0.0
         self.write_badges()
+        self.write_home()
         return report
 
     def write_badges(self) -> None:
@@ -215,6 +252,24 @@ class Daemon:
             self.badges_path.write_text(json.dumps({"needsYou": count, "at": self.ctx.now().isoformat()}))
         except Exception as err:  # noqa: BLE001  a badge never takes the daemon down
             log(f"badge: {err}")
+
+    def write_home(self) -> None:
+        """The desktop home panel's feed (bin/lib/home_feed.py), which Kyber
+        watches and redraws on change."""
+        if self.ctx.graph is None:
+            return
+        try:
+            import home_agent  # noqa: PLC0415
+            import home_feed  # noqa: PLC0415
+
+            now = self.ctx.now()
+            rows = home_feed.cached_projects(now, time.monotonic(), self.ctx.home)
+            body = home_feed.build(self.ctx.graph, now, rows, getattr(self.ctx, "ingest_errors", {}),
+                                   done=home_feed.load_done(home_feed.done_path(self.home_path)),
+                                   agent=home_agent.load(home_agent.state_path(self.home_path)))
+            home_feed.write(body, self.home_path)
+        except Exception as err:  # noqa: BLE001  the panel never takes the daemon down
+            log(f"home: {err}")
 
     # ── state ────────────────────────────────────────────────────────────
 
@@ -308,6 +363,8 @@ class Daemon:
             self.push(live, extra=dict(live.values))
             return
         live.sent = {}
+        shape = getattr(p, "shape", None)
+        live.shape = shape() if callable(shape) else None
         initial = p.initial()
         initial.update({k: v for k, v in live.values.items() if k.startswith(f"/{p.name}/")})
         lines = [head] + p.layout()
@@ -320,6 +377,13 @@ class Daemon:
             live.sent[pointer] = json.dumps(value, sort_keys=True)
             if pointer in initial:
                 live.values.setdefault(pointer, value)
+        try:
+            # A wall of text still draws (an empty panel is worse), but it is
+            # named in the log every agent reads (surface_lint, 2026-10-10).
+            for finding in surface_lint.lint(lines):
+                log(f"wall of text on {p.name}: {finding}")
+        except Exception:  # noqa: BLE001  the check never takes the panel down
+            pass
         self.hud.send(lines)
 
     def push(self, live: Live, extra: dict | None = None) -> list[str]:
@@ -330,6 +394,17 @@ class Daemon:
         except Exception as err:  # noqa: BLE001
             model = {p.p("note"): f"This surface hit a bug: {err}"}
         model.update(extra or {})
+        shape = getattr(p, "shape", None)
+        if callable(shape) and shape() != live.shape:
+            # Its components changed: draw it whole, then send `extra` (a
+            # press's status line) on top, since a full draw reads only the
+            # model and the values.
+            self.draw(live, full=True)
+            if extra:
+                for pointer, value in extra.items():
+                    live.sent[pointer] = json.dumps(value, sort_keys=True)
+                self.hud.send([f"@ {p.name}"] + [data_line(k, v) for k, v in extra.items()])
+            return []
         owned = set(p.initial())
         lines = []
         for pointer, value in model.items():
@@ -402,7 +477,8 @@ class Daemon:
     def tick(self) -> None:
         now = self.clock()
         if now >= self.next_ingest and not self.ingesting:
-            self.next_ingest = now + INGEST_EVERY_S
+            # Held off while it runs; ingest() sets the real next time when done.
+            self.next_ingest = now + INGEST_IDLE_S
             self.spawn(self.ingest)
         with self.lock:
             due = [n for n, s in self.open.items() if not s.busy and s.due <= now]
@@ -430,6 +506,18 @@ class Daemon:
             if ev is None:
                 return
             extra = {k: v for k, v in ev.items() if k not in ("name", "component")}
+            if line.startswith("e closed "):
+                # The X on a card. Kyber has already taken it down; forget it
+                # here too. Unheard, the next refresh sent `@ tasks` and its
+                # `d` lines to a surface the display no longer had, which drew
+                # an empty "Tasks / Loading" card: on 2026-10-11 one opened at
+                # 09:51 kept coming back all afternoon after every X.
+                name = str(extra.get("surface") or ev["component"])
+                with self.lock:
+                    gone = self.open.pop(name, None)
+                if gone is not None:
+                    self.save()
+                return
             if line.startswith("e action "):
                 # A row's button: `e action <name> row="<id>" surface="<name>"`
                 # (hud/CLAUDE.md, Row actions). The row is a graph node id.
@@ -741,15 +829,27 @@ def running() -> bool:
 def start_daemon() -> bool:
     if running():
         return True
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a") as out:
-        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run"], stdin=subprocess.DEVNULL,
-                         stdout=out, stderr=out, start_new_session=True)
-    deadline = time.monotonic() + START_WAIT_S
-    while time.monotonic() < deadline:
+    # One starter at a time. hud-listen starts the daemon as it comes up, and
+    # a voice command a second later starts it again; both saw "not running"
+    # before either bound, and two daemons drew on one display (seen in
+    # tests/test_docs_e2e.py on 2026-10-09: a press reached the one without
+    # the edit). The second starter now waits on the lock and finds it up.
+    import fcntl  # noqa: PLC0415
+
+    CONTROL_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONTROL_LOCK, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
         if running():
             return True
-        time.sleep(0.1)
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a") as out:
+            subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run"], stdin=subprocess.DEVNULL,
+                             stdout=out, stderr=out, start_new_session=True)
+        deadline = time.monotonic() + START_WAIT_S
+        while time.monotonic() < deadline:
+            if running():
+                return True
+            time.sleep(0.1)
     return False
 
 
@@ -840,12 +940,15 @@ def glass_row(r: dict, now) -> dict:
     """One walk row as kyber-genui may draw it: a label, the network, how
     long it has waited, why, and the node id for a row button. Never the
     node's props, and never message text: a request read out of a text is
-    named by who asked, not by what they wrote (docs/GENUI.md, step 4)."""
+    named by who asked, not by what they wrote (docs/reference/GENUI.md, step 4)."""
     from surfaces.walks import short_when  # noqa: PLC0415
 
     label = r.get("label", "")
-    if r.get("type") == "Task" and (r.get("props") or {}).get("kind") == "request":
+    if r.get("type") == "Task" and (r.get("props") or {}).get("kind") in ("request", "commitment"):
         label = (r.get("props") or {}).get("provenance") or "an ask in a text"
+    elif r.get("type") == "Message":
+        # A `missing` row for a group text: who said it and where, not the words.
+        label = r.get("provenance") or "a group text"
     return {"id": r.get("id", ""), "label": label, "app": r.get("app", ""), "why": r.get("why", ""),
             "waiting": short_when(r.get("when", ""), now), "tier": TIER_NAMES[r.get("tier", 2)],
             "people": [c["label"] for c in r.get("chips", []) if c["id"].startswith("person:")][:2]}
@@ -893,9 +996,95 @@ def cmd_walk(kind: str, arg: str, as_json: bool = False) -> int:
     return 0
 
 
+def spawn_home_work(row_id: str) -> int:
+    """`home --work <id>` in its own session, so a press returns at once and
+    the run outlives the Kyber process that asked for it. What it says on
+    stderr goes to the surfaces log."""
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a") as out:
+        child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "home", "--work", row_id],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=out,
+                                 start_new_session=True, close_fds=True)
+    return child.pid
+
+
+def cmd_home(write: bool, done: str = "", undo: str = "", handle: str = "", work: str = "",
+             send: str = "", drop: str = "") -> int:
+    """The home panel's feed from the graph as it stands. It never ingests:
+    Kyber runs `home --write` when the feed is stale, and the daemon owns
+    ingesting. Stamped with when the graph was last written, so a graph
+    nobody is refreshing shows its age on the panel, and carrying the
+    sources the daemon last could not read, since only an ingest knows them.
+    `done` crosses a to-do off and `undo` puts it back (home_feed.cross).
+    `handle` hands a to-do for someone to the agent, `work` is that run,
+    `send` sends the text it drafted and `drop` throws the draft or the
+    answer away (home_agent). Each then writes the feed, so the panel shows
+    it at once."""
+    import home_agent  # noqa: PLC0415
+    import home_feed  # noqa: PLC0415
+
+    path = osgraph.default_path()
+    if not path.exists():
+        # After `forget`, or before the first ingest: opening the graph would
+        # make a new one, and that is the daemon's call, not a refresh's.
+        print("No graph yet: the surfaces daemon writes it on its first ingest.", file=sys.stderr)
+        return 1
+    ctx = live_context()
+    now = ctx.now()
+    acted = bool(done or undo or handle or work or send or drop)
+    if acted:
+        try:
+            if done:
+                said = home_feed.cross(ctx.graph, done, now, HOME_DONE, home=ctx.home)
+            elif undo:
+                said = home_feed.uncross(undo, HOME_DONE)
+            elif handle:
+                said = home_agent.handle(ctx.graph, handle, now, HOME_AGENT, spawn_home_work)
+            elif work:
+                said = home_agent.work(work, now, HOME_AGENT, ctx.home)
+                # The run took minutes; the feed is stamped when it ends.
+                now = ctx.now()
+            elif send:
+                said = home_agent.send(ctx.graph, send, now, HOME_AGENT, HOME_DONE, ctx.home)
+            else:
+                said = home_agent.drop(drop, HOME_AGENT, ctx.home)
+        except (home_feed.Refused, home_agent.Refused) as err:
+            print(err, file=sys.stderr)
+            # A refused send or handle may have changed the record; the
+            # panel redraws from the feed either way.
+            write_home_feed(ctx, now, path)
+            return 2
+        print(said)
+        write = True
+    if write:
+        write_home_feed(ctx, now, path)
+        if not acted:
+            print(HOME_PANEL)
+    else:
+        print(json.dumps(home_body(ctx, now, path), indent=1, default=str))
+    return 0
+
+
+def home_body(ctx, now, graph_path: Path) -> dict:
+    import home_agent  # noqa: PLC0415
+    import home_feed  # noqa: PLC0415
+
+    rows = home_feed.projects(now, ctx.home, home_feed.load_config(home_feed.config_path(ctx.home)))
+    failed = home_feed.read(HOME_PANEL).get("failed") or []
+    return home_feed.build(ctx.graph, now, rows, [str(f) for f in failed if isinstance(f, str)],
+                           written=home_feed.graph_written(graph_path), done=home_feed.load_done(HOME_DONE),
+                           agent=home_agent.load(HOME_AGENT))
+
+
+def write_home_feed(ctx, now, graph_path: Path) -> None:
+    import home_feed  # noqa: PLC0415
+
+    home_feed.write(home_body(ctx, now, graph_path), HOME_PANEL)
+
+
 def cmd_forget() -> int:
     """Stop the daemon, then delete the graph (and its -wal, -shm and
-    -journal), the agent runs' task copies, and the badge. The next start
+    -journal), the agent runs' task copies, the badge and the home feed. The next start
     rebuilds the last 7 days from the sources, which is the point: the graph
     is a cache, and this is how to empty it."""
     import osgraph_runs  # noqa: PLC0415
@@ -910,9 +1099,12 @@ def cmd_forget() -> int:
         import shutil  # noqa: PLC0415
         shutil.rmtree(osgraph_runs.RUNS, ignore_errors=True)
         gone.append(str(osgraph_runs.RUNS))
-    if BADGES.exists():
-        BADGES.unlink()
-        gone.append(str(BADGES))
+    # The home feed and its crossed-off record hold to-do titles and names,
+    # so they go with the graph they were read from.
+    for derived in (BADGES, HOME_PANEL, HOME_DONE, HOME_AGENT):
+        if derived.exists():
+            derived.unlink()
+            gone.append(str(derived))
     print("Removed:\n  " + "\n  ".join(gone) if gone else "Nothing was stored.")
     print("The surfaces daemon is stopped; it rebuilds the last 7 days when it next starts.")
     return 0
@@ -947,6 +1139,15 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("words", nargs="+")
     w.add_argument("--json", action="store_true", help="rows for kyber-genui: {\"rows\": [...]}")
     sub.add_parser("graph", help="graph counts and an ontology check")
+    h = sub.add_parser("home", help="the desktop home panel's feed, as JSON")
+    h.add_argument("--write", action="store_true", help="write ~/.bob/home-panel.json instead of printing it")
+    crossing = h.add_mutually_exclusive_group()
+    crossing.add_argument("--done", default="", metavar="ID", help="cross a to-do off, in its own app where it can be")
+    crossing.add_argument("--undo", default="", metavar="ID", help="put a crossed-off to-do back")
+    crossing.add_argument("--handle", default="", metavar="ID", help="hand a to-do for someone to the agent")
+    crossing.add_argument("--work", default="", metavar="ID", help=argparse.SUPPRESS)
+    crossing.add_argument("--send", default="", metavar="ID", help="send the text the agent drafted for a to-do")
+    crossing.add_argument("--drop", default="", metavar="ID", help="throw away the agent's draft or answer")
     sub.add_parser("forget", help="stop the daemon and delete everything it stored")
     sub.add_parser("run", help="the daemon")
     sub.add_parser("start", help="start the daemon in the background if it is not running")
@@ -966,6 +1167,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ingest(args.days)
     if args.cmd == "graph":
         return cmd_graph()
+    if args.cmd == "home":
+        return cmd_home(args.write, args.done, args.undo, args.handle, args.work, args.send, args.drop)
     if args.cmd == "forget":
         return cmd_forget()
     if args.cmd in ("open", "walk"):
@@ -991,6 +1194,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if args.cmd == "walk":
             return cmd_walk(kind, arg, as_json=args.json)
+        why = live_glass.refusal()
+        if why:
+            print(why, file=sys.stderr)
+            return 3
         return via_daemon({"cmd": "open", "name": kind, "arg": arg, "at": at})
     if args.cmd == "close":
         if not running():
@@ -998,6 +1205,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return via_daemon({"cmd": "close", "name": " ".join(args.words)})
     if args.cmd == "space":
+        why = live_glass.refusal()
+        if why:
+            print(why, file=sys.stderr)
+            return 3
         return via_daemon({"cmd": "space", "name": args.name})
     return 2
 
