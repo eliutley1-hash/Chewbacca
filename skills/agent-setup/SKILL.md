@@ -121,6 +121,16 @@ A consent screen granting access to someone's own account is theirs to approve.
 Get it to the point of one click, hand them the URL, say
 `BLOCKED: approve the consent screen`, and verify after they do.
 
+A device-code sign-in (`gh auth login --web`, any "enter this code" flow) is
+the same rule, and "one click" means it literally. Never hand over the code and
+a URL. Open the page in their browser yourself, pick the signed-in account,
+type the code, submit, and stop on the Authorize screen with the browser in
+front. Chain the follow-up (create the repo, push) onto the login command in
+the background so their click finishes the whole job. GitHub keeps
+"Authorize" disabled for automated clicks, so that last press is theirs. On
+2026-10-12 a code and a link were handed over instead, and Eli said "its not
+popping up on my app, no code", then "do it again, to the authorize screen".
+
 ## 4. Verify and report
 
 ```bash
