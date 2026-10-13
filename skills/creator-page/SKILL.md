@@ -61,6 +61,20 @@ work with them. Phone first: almost everyone opens it from Instagram.
   the `/p/` link downloads the ones it can.
 - Give the gym its own section when the creator trains.
 
+## Third round (2026-10-13)
+
+- Instagram carousel videos often download as VP9, which iPhones won't play.
+  He saw the background video in Claude but not on his phone. Check the
+  codec (`strings | grep vp09`) and take an H.264 format instead (`yt-dlp -F`
+  lists them, often formats 0 to 2), and always give a background video a
+  poster frame.
+- Photos scattered in the corners around a statement "looks like a
+  PowerPoint". Leave them out.
+- A sideways strip tied to page scroll moved too fast to read. Use tabs
+  that swap a swipeable gallery with arrows and a counter.
+- Add a community section when the creator values it: friends become
+  family, and they only promote things they and their friends would use.
+
 ## Never
 
 - Never publish a page that uses a real person's name and photos without the
