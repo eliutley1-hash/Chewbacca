@@ -272,3 +272,15 @@ thread back afterwards to confirm it landed: Messages accepts unregistered
 handles without an error.
 
 Never send a draft the user has not seen.
+
+### "Text me when it's done"
+
+A request to text the user themselves when work finishes means the first
+moment there is something to look at, not the end of the whole project. On
+2026-10-13 the ask was "give me a text when the project is done", corrected
+straight after to "as in when the skeleton is ready and i can see what you came
+up with". So send it the moment a first viewable version exists, put the link
+to that version in the text, and keep it to one line. Never hold the text
+until every later step is finished, and never send a text with no link in it.
+If the read-back fails because Messages can't be read, tell them the send is
+unconfirmed instead of saying it landed.
