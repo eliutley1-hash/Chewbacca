@@ -47,6 +47,20 @@ work with them. Phone first: almost everyone opens it from Instagram.
   flood-fill mask (blue pixels connected to the top row) on the hero photo
   makes a clean foreground cutout to layer over the name.
 
+## Second round (2026-10-13, his words)
+
+- Scroll has to feel instant. Pinned sections that need "like four times"
+  or "six times" of scrolling before anything moves read as lag. Play the
+  intro on load (name rises in the first seconds, then "welcome", then a
+  "swipe down for more" cue) and tie reveals to normal scroll position.
+- Don't call a creator's vehicle or gear old without checking. Colby's
+  4Runner is brand new and he is building it out.
+- Interests as plain pill bubbles "looks kind of simple". Use photo tiles.
+- A scenic clip from their own posts (a sunset, not a talking reel) works
+  as a section background. Carousel children can hold videos: `yt-dlp` on
+  the `/p/` link downloads the ones it can.
+- Give the gym its own section when the creator trains.
+
 ## Never
 
 - Never publish a page that uses a real person's name and photos without the
