@@ -96,6 +96,11 @@ rule below is one of them.
 - **Never put his life into the content unless he asks.** The first version
   hid facts about his mission, job and degree in the code on the walls. He
   said: "unless I ask you to do that, don't do that." Use neutral code.
+- **Never drop the signature cursor between stages.** After the gate, the
+  burning cursor vanished during the intro and turned back into a normal
+  arrow on the monitor screen. Eli: "my clicker isnt even on fire anymore lol"
+  (2026-10-14). Draw the cursor on its own top canvas so it burns over every
+  layer, and let it go out with the black and relight by itself.
 - **Never light everything.** He liked that the fire "doesn't light up the
   entire screen" so "you have to actually look for it." Keep any hidden UI
   (like the password prompt) low and off-center, visible only near the light.
