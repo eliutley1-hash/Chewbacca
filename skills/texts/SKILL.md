@@ -284,3 +284,18 @@ to that version in the text, and keep it to one line. Never hold the text
 until every later step is finished, and never send a text with no link in it.
 If the read-back fails because Messages can't be read, tell them the send is
 unconfirmed instead of saying it landed.
+
+### Texting someone an artifact link
+
+A claude.ai artifact published in this session starts private. The publish
+result says so, and the person you text gets an error page. Before sending a
+link to anyone but the user, check the publish result: if it says private, the
+user has to open the page, click Share and pick "Anyone with the link". Hold
+the text until they say it's shared, then send it.
+
+A form for someone outside the user's account can't save answers to the `db`
+capability, because that needs a signed-in viewer with write access. Have the
+page build the answers into text with a "Copy my answers" button. Clipboard
+writes work from a click, but `sms:`, `mailto:` and Web Share don't. The person
+pastes the answers back into the thread. (2026-10-13, Abbie's site
+questionnaire.)
