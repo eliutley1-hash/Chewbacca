@@ -83,6 +83,39 @@ rule below is one of them.
 - Test buttons (slow, fast, stop) must hold the current form. A fake scroll
   that drifts through the stages hides bugs.
 
+## Full-screen scenes and dark pages (eliutley.com gate, 2026-10-14)
+
+- **Never make the effect cartoonish.** On the torch password page, Eli said
+  the first version "seems so cartoonish," and later that the rock wall
+  "looks like cartoon cobblestone." He wanted "a dark grainy look... like if it
+  was dark and the camera was viewing it." What worked: film grain at 24fps,
+  the room rendered at half resolution, and a raycast box room with
+  inverse-square light pooling on a smooth concrete floor. Bump-mapped rock,
+  tile seams and a held torch all read as cartoon. He also asked to "get rid of
+  the lines in the floor."
+- **Never put his life into the content unless he asks.** The first version
+  hid facts about his mission, job and degree in the code on the walls. He
+  said: "unless I ask you to do that, don't do that." Use neutral code.
+- **Never light everything.** He liked that the fire "doesn't light up the
+  entire screen" so "you have to actually look for it." Keep any hidden UI
+  (like the password prompt) low and off-center, visible only near the light.
+- **A top-down figure only reads on a near-black background.** The first
+  desk scene filled the desk with mid-gray, and the guy turned into a
+  mushroom of characters. Fixes that worked: desk almost black (about 0.04)
+  with a cutoff of about 0.07 so it draws nothing; a dark ring around the head
+  and dark outlines around the arms so the parts separate; hair darker than
+  the shirt and skin brightest; and frame tight (about 230 world units wide)
+  so he's big in cells. Check with a `?grid` debug view of the hidden canvas.
+- **A globe made of characters:** sample NASA Blue Marble
+  (`cdn.jsdelivr.net/npm/three-globe@2.31.0/example/img/earth-blue-marble.jpg`,
+  CORS ok) by inverse orthographic projection per cell. Use land contrast of
+  `smooth01((lum-0.13)/0.2)`, keep the clouds light so they don't hide the
+  continents, and map brightness onto a 70-glyph ramp with ±1 flicker.
+- **Changes between forms are particles with identity.** Each character flies
+  from where it was to its new cell, matched by angle around each center.
+  Give the build a `?at=<seconds>` jump so each stage can be checked without
+  replaying the whole sequence.
+
 ## Checking it
 
 - Serve the page locally and drive it in the built-in browser. Check each
