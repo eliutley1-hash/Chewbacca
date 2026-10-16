@@ -75,8 +75,77 @@ work with them. Phone first: almost everyone opens it from Instagram.
 - Add a community section when the creator values it: friends become
   family, and they only promote things they and their friends would use.
 
+## Fourth round (2026-10-14, his words)
+
+- The pitch: "more in depth than a link tree". Keep the links and email, but
+  let brands and followers get to know the person.
+- The about-him topics were "too much to scroll through". One tabbed section
+  (topic tabs, the topic's copy, then a swipe gallery with arrows) replaced six
+  tall chapters and cut the phone page from 10,780px to about 6,400px.
+- Numbers: "only put the good stuff". Followers, biggest reel views, total
+  reel views, recent growth. No average likes, no fine print. The reels grid
+  (`/reels/` tab, logged out) shows play counts on each tile; those are the
+  public view numbers and run higher than `video_view_count` in the embed.
+- Lead the favorite-posts strip with the biggest reels. Show views only, and
+  only when they're 10K or more.
+- Instagram's progressive formats (1 to 3) are H.264 but huge. No ffmpeg on
+  this Mac: an AVAssetReader/Writer Swift script at 540x960, 1.6 Mbps, first
+  40 seconds, lands around 8 MB, under the artifact's 15 MB file limit.
+
+- Galleries are swipe only: no arrow buttons, small dots underneath, and
+  mouse drag-to-swipe so it also works when he demos on a computer.
+- Social links (Instagram, YouTube, TikTok) go right after the statement,
+  before "What I bring". Show a "Coming soon" card for any he doesn't have yet.
+- Favorite posts: just the three biggest reels.
+
+## Media kit PDF (2026-10-14)
+
+- The media kit is the numbers document for brands, separate from the page.
+  He wanted it "clean", "modern, like map style", not interactive, keeping
+  every fact from the creator's own kit and only rewriting.
+- What worked: Letter pages in HTML, paper and ink with faint SVG contour
+  lines (marching squares), mono map labels, one blaze-orange accent,
+  photos in thin frames with "Fig." captions. Printed with headless Chrome
+  `--print-to-pdf --no-pdf-header-footer`, checked page by page with PyMuPDF.
+- Grid columns holding huge type need `minmax(0, 1fr)`, or the name pushes
+  the column off the page. Images in a fixed-height grid row need a fixed
+  height on the frame too.
+- Messages attachments can't be read by the app directly (no Full Disk
+  Access). Copy them out with `run_in_terminal` first.
+
+## The Pholio template (2026-10-16, his words)
+
+- Pholio pages now follow Gavin's template, not Colby's long scroll film. See
+  the gallery at phoilio-gavinjmunroe-4969s-projects.vercel.app/gallery
+  (pages /milesanddmiles and /tysonnek). He said: "check both the pholios i
+  send and replicate somthing similair... this is very importart".
+- Template order, phone width: photo hero fading into the page with the name
+  over the fade; @handle left, "Work with me" right; one solid accent Shop
+  bar; social icons; "In my shop" side-scroll cards; an auto-scrolling "Work
+  with me" strip with a pause button; one big statement line; a second photo
+  strip; a contact button. Short. Keep that order and change only the look.
+- The look comes from the creator's own Instagram grid: "scrape her instagram
+  and find her vibe. her colors so that it will tones and niche." Open the
+  profile logged out (close the app popup), scroll the grid, and pull the
+  palette and mood from it before picking colors or fonts. Their questionnaire
+  answer ("earthy tones, girly and fun") narrows it; the grid decides it.
+- Photos: "only use photos THAT LOOK DOPE AND CLEAN AND SHOW HER WELL."
+  Contact-sheet every photo first and pick on purpose: sharp, well lit, face
+  visible, the creator as the subject. Cut group shots, busy shots and
+  anything where they're small in the frame, even if fewer photos remain.
+- Drive folders shared by link download logged out: read the file ids from
+  the folder page (`[data-id]`), then
+  `curl -L "https://drive.usercontent.google.com/download?id=<id>&export=download&confirm=t"`.
+- TikToks: `brew install yt-dlp`, then download one at a time (the load guard
+  blocks backgrounded loops). The info JSON carries the real view counts.
+- Brand cards without a known photo-to-brand match stay text only. Never pair
+  a photo with a brand the creator didn't tie to it.
+
 ## Never
 
 - Never publish a page that uses a real person's name and photos without the
   user saying so. Build it as a file first.
 - Never fill a stat, brand or contact with a guess. Mark it.
+- Never invent a new layout for a Pholio page when the template exists, and
+  never pick colors before looking at the creator's own feed.
+- Never use a photo that doesn't show the creator well just to fill a strip.
