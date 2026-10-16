@@ -186,6 +186,16 @@ work with them. Phone first: almost everyone opens it from Instagram.
   skill). `mac messages send <number>` sends to a raw number; read-back needs
   Full Disk Access, so say "unconfirmed" when it can't be read.
 
+## Footer mark (2026-10-16, his words)
+
+- "for now on always add this p on the bottom of the page. just sub it for the
+  pholio you put before." Every new Pholio ends with the chrome paperclip p by
+  itself, about 44px tall, centered. No "holio" text beside it.
+- The transparent cutout lives in his private context:
+  `projects/pholio-assets/pholio-clip-p.png` (and `-small.png`). Copy it into
+  the page's media folder. Don't re-cut it from the white-background original.
+- He said not to change Finn's page for this. It starts with the next build.
+
 ## Never
 
 - Never publish a page that uses a real person's name and photos without the
