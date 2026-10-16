@@ -141,6 +141,51 @@ work with them. Phone first: almost everyone opens it from Instagram.
 - Brand cards without a known photo-to-brand match stay text only. Never pair
   a photo with a brand the creator didn't tie to it.
 
+## Same format, new look (2026-10-16, Finn's page)
+
+- Every Pholio keeps the section format of Cambree's page and Gavin's template.
+  The look never repeats: "I don't want them to look the exact cookie cutter
+  same but they have to have some sort of format." Pull colors, type and mood
+  from each creator's own grid and their hero photo.
+- Every link in the creator's bio goes on the page. With no bio links, the
+  side-scroll card slot holds what they're known for (Finn: his Tacoma).
+- The reel strip leads with their top reels by view count.
+- When he hands you a hero photo: rotate it upright (`sips -r 90` when it
+  arrives sideways) and run it full bleed, edge to edge at every width.
+- Size a wide display name against its longest word at 375px (measure the
+  text range, not the h1 box). MATHEWSON at Archivo wdth 125 needed 9.6vw.
+- Embed pages refuse plain curl. Send browser headers (Chrome UA, Accept
+  text/html, Sec-Fetch-Mode navigate, Sec-Fetch-Dest iframe) and contextJSON
+  comes back, carousel children included.
+- Logged out, the reels tab stops at about 36 tiles. Older big reels show up
+  on the profile grid; their embed `video_view_count` is a floor, lower than
+  the tile play count.
+- No public email: use an Instagram DM button (ig.me/m/<handle>) instead of a
+  placeholder, and tell Eli the email is missing.
+- "whats the hold up" (2026-10-16): he heard nothing for the whole scrape.
+  Say one line before each slow step (scraping, downloads, re-encodes), and
+  build the reusable tools once: `shrink` (AVAssetWriter, 540x960, 1.3 Mbps,
+  poster frame), `sheet` (contact sheet) and `crop` live as Swift sources in
+  that session's scratchpad tools; copy them into the skill folder next time.
+- Hero photo corrections (2026-10-16, his words): "make the finn mathewson in
+  the sky where he is pointing at it" and "crop photo so there isnt so much
+  space above his head". When the hero subject points or looks somewhere, put
+  the name there, not at the bottom fade. Crop the file itself (sips crop
+  offsets silently do nothing; use a CGImage crop) so the head sits about a
+  quarter of the way down, and leave just enough sky for the name.
+- "make the name kinda move as you scroll down": drift the name toward where
+  the subject points (translate on scroll, rAF-throttled, fade by 75% of the
+  hero height), and skip it under reduced motion.
+- When he marks a spot with a photo of his screen ("put it here, in that
+  box"), size the element to fill that box, measured against the column, not
+  to a size you picked. Messages attachments need the terminal panel to copy
+  out (this shell has no Full Disk Access), then `sips -s format jpeg`.
+- An animation he links from Pinterest is someone else's art. Redraw it as
+  your own canvas sprite in the page's palette instead of embedding the GIF.
+- Texting the page link: the artifact must be shared first (see the texts
+  skill). `mac messages send <number>` sends to a raw number; read-back needs
+  Full Disk Access, so say "unconfirmed" when it can't be read.
+
 ## Never
 
 - Never publish a page that uses a real person's name and photos without the
