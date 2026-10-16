@@ -62,6 +62,23 @@ rule below is one of them.
   and back, peaking mid-change.
 - **Never pick the page split yourself.** He wanted equal thirds, one per
   form, with the change triggered on crossing each line.
+- **Never study a Pinterest pin from its preview image alone.** On 2026-10-16
+  the spider pin was read from its `og:image` poster, and Eli had to say
+  "make sure to analyze the movement of the spider in the link i sent you. its
+  a video." Check the pin for a `<video>` element first; if there is one, play
+  it muted, pin it full screen, and seek `currentTime` through the clip taking
+  screenshots. The spider clip showed things the poster hid: two alternating
+  sets of four legs with a small ripple, knees lifting high above a level body,
+  far legs splayed up for a three-quarter look, accent blocks that keep
+  swapping, and a mid-clip switch from H T R A E letters to O and N.
+- **Accent cells are a separate channel.** Draw accent zones in a color with a
+  blue component (for example `rgb(255,0,255)`) and test `blue > 120` per cell.
+  Spider zones (abdomen, knees, feet) light up as filled accent blocks with a
+  dark letter, re-rolled a few times a second so they swap around. Cheetah spots
+  ride the spine at fixed (u, v) points, drawn about 3.3 units wide and inked in a
+  lightened accent so they read on near-black. Eli asked for this himself:
+  "it would be sick if the cheetah also had its spots in a different color or
+  shade like how the spider has the green interchanging code look."
 - **Never trust a debug view you didn't render big.** Draw the hidden
   shapes at 4x scale in an overlay to judge anatomy, then check the real
   characters at the target size. A shape that looks fine at 4x can still
@@ -125,6 +142,9 @@ rule below is one of them.
 
 - Serve the page locally and drive it in the built-in browser. Check each
   form in each state, mid-morph frames, the turnaround, and phone width.
+- A hidden pane throttles rAF to about 1.5fps, so rate-limited morphs take
+  20 seconds or more. Before calling the page slow, check with a `longtask`
+  PerformanceObserver: no tasks over 50ms means it's the throttle, not the code.
 - If the pane is hidden, rAF stops and screenshots go stale. Read state
   through JS (`getBoundingClientRect`, the status text) instead of trusting
   the image.
