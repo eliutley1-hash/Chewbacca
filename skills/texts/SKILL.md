@@ -48,6 +48,15 @@ The first sync takes a 90-day window and later ones take 30. Neither is the
 whole history: `--days 3650` on a sync pulls years, and on a real library that
 is hundreds of thousands of rows, so only do it if they ask.
 
+An empty store ("no messages yet", `stats` shows 0) means the app running you
+lacks Full Disk Access, not that the person never texted. `mac doctor` says
+`fullDiskAccess: denied`. Open the pane yourself (`open
+"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles"`)
+and have them turn on the app and restart it. After that, sync with an explicit
+window: `people texts sync --days 30`. A plain `sync` after the failed one
+printed "synced 0 new messages (0d window)", because the denied run still
+stamped the last-sync time (2026-10-16, Kaiya's thread with an order number).
+
 ## Who is waiting on a reply
 
 "Clear out my texts" means respond to them, not delete them. It is two
